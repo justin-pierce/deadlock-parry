@@ -12,7 +12,7 @@ import win32com.client
 import win32con
 import win32gui
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 _file_dir = os.path.dirname(__file__)
 
