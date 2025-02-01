@@ -2,6 +2,10 @@
 
 Randomly punches you every few minutes. When you hear the sound, press F.
 
+## Usage
+
+Run `deadlock_parry.exe`, with some optional args to control delays / timing.
+
 ```
 Usage: deadlock_parry.exe [OPTIONS]
 
@@ -13,6 +17,7 @@ Options:
   -w, --parry-window INTEGER  The max duration for parrying before being hit,
                               in milliseconds (Default: 600)
   -k, --parry-key TEXT        The key binding for parry
+  -v, --verbose               Enable verbose debug logging
   --help                      Show this message and exit.
 ```
 
@@ -26,4 +31,12 @@ Parry success: 429ms
 6 / 8 (75.00%), average response: 398ms
 Parry failed, you died.
 6 / 9 (66.67%), average response: 398ms
+```
+
+## Building
+
+To build deadlock_parry.exe from source, run:
+
+```
+$ pyinstaller deadlock_parry.spec
 ```
