@@ -23,11 +23,25 @@ DEFAULT_DELAY_MIN = 15
 DEFAULT_DELAY_MAX = 240
 DEFAULT_PARRY_WINDOW = 600
 
+# delay after failing to parry before the app is deactivated
+FINISH_PUNCH_DELAY = 600
+
 
 class ParryResult(object):
-    def __init__(self, success: bool, response_time: float = 0):
+    def __init__(self, success: bool, response_time: int | None = None):
         self.success = success
         self.response_time = response_time
+
+    def to_string(self) -> str:
+        if self.success:
+            return f"Parry success: {self.response_time}ms"
+        elif self.response_time is not None:
+            return f"Parry failed: {self.response_time}ms"
+        else:
+            return f"Parry failed, you died."
+
+    def has_response_time(self) -> bool:
+        return self.response_time is not None
 
 
 class PunchGame(object):
@@ -49,7 +63,10 @@ class PunchGame(object):
         self._next_punch_time = -1
         # the actual time at which a punch started
         self._punch_start_time = -1
+        # is a punch currently happening?
         self._is_punching = False
+        # did the player miss the parry window for the current punch?
+        self._parry_failed = False
 
         self._window: pygame.Surface | None = None
         self._hwnd = None
@@ -103,7 +120,7 @@ class PunchGame(object):
             self._window.fill(0)
 
             # listen for parry input
-            did_parry = False
+            parry_input_pressed = False
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     run = False
@@ -115,7 +132,7 @@ class PunchGame(object):
                             LOG.info(f"Received Ctrl + C, exiting...")
                             run = False
                     elif event.key == self.parry_key:
-                        did_parry = True
+                        parry_input_pressed = True
                     LOG.debug(f"KEYDOWN: {event.dict}")
 
             if not self._is_punching:
@@ -127,12 +144,22 @@ class PunchGame(object):
                     self.punch()
 
             if self._is_punching:
-                elapsed_time_ms = (time.time() - self._punch_start_time) * 1000
-                # check for key press
-                if did_parry:
-                    self.parry()
-                elif elapsed_time_ms >= self.parry_window:
-                    self.fail_parry()
+                elapsed_time_ms = round((time.time() - self._punch_start_time) * 1000)
+
+                if not self._parry_failed:
+                    # still time left to parry
+                    if parry_input_pressed:
+                        self.parry()
+                        self.finish_punch(True, elapsed_time_ms)
+                    elif elapsed_time_ms >= self.parry_window:
+                        # don't finish punch yet, allow for late input
+                        self.fail_parry()
+                else:
+                    # failed the parry, just wait for late input or finish the punch
+                    if parry_input_pressed:
+                        self.finish_punch(False, elapsed_time_ms)
+                    elif elapsed_time_ms >= self.parry_window + FINISH_PUNCH_DELAY:
+                        self.finish_punch(False, None)
 
             pygame.display.flip()
 
@@ -150,9 +177,14 @@ class PunchGame(object):
             win32gui.ShowWindow(self._hwnd, win32con.SW_MINIMIZE)
 
     def schedule_punch(self):
-        random_delay = random.uniform(self.delay_min, self.delay_max)
-        self._next_punch_time = time.time() + random_delay
-        LOG.debug(f"Next punch in {random_delay:.2f}s")
+        # do a quick initial delay for the first punch
+        if self._punch_start_time < 0:
+            self._next_punch_time = time.time() + 5
+        else:
+            random_delay = random.uniform(self.delay_min, self.delay_max)
+            self._next_punch_time = time.time() + random_delay
+
+        LOG.debug(f"Next punch in {self._next_punch_time - time.time():.2f}s")
 
     def punch(self):
         # activate game window
@@ -166,27 +198,24 @@ class PunchGame(object):
 
     def reset_punch(self):
         self._is_punching = False
+        self._parry_failed = False
         self._next_punch_time = -1
         # hide the game window
         self.deactivate_window()
 
     def parry(self):
-        time_ms = round((time.time() - self._punch_start_time) * 1000)
-        LOG.info(f"Parry success: {time_ms}ms")
-        self.results.append(ParryResult(True, time_ms))
-
         self.play_sound(self.PARRY_SOUND)
-        self.reset_punch()
-
-        self.log_results_summary()
 
     def fail_parry(self):
-        LOG.info("Parry failed, you died.")
-        self.results.append(ParryResult(False))
-
+        self._parry_failed = True
         self.play_sound(self.HIT_SOUND)
-        self.reset_punch()
 
+    def finish_punch(self, success: bool, response_time: int | None):
+        result = ParryResult(success, response_time)
+        self.results.append(result)
+        LOG.info(result.to_string())
+
+        self.reset_punch()
         self.log_results_summary()
 
     def log_results_summary(self):
@@ -194,8 +223,9 @@ class PunchGame(object):
         num_total = len(self.results)
         num_success = len(successful_results)
         avg_response = 0
-        if successful_results:
-            avg_response = round(statistics.fmean([r.response_time for r in successful_results]))
+        responded_results = [r for r in self.results if r.has_response_time()]
+        if responded_results:
+            avg_response = round(statistics.fmean([r.response_time for r in responded_results]))
         success_rate = num_success / float(num_total)
         LOG.info(f"{num_success} / {num_total} ({success_rate * 100:.2f}%), average response: {avg_response}ms")
 
@@ -228,7 +258,17 @@ class PunchGame(object):
     default="f",
     help="The key binding for parry",
 )
-def main(delay_min, delay_max, parry_window, parry_key):
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Enable verbose debug logging",
+)
+def main(delay_min, delay_max, parry_window, parry_key, verbose):
+    if verbose:
+        LOG.setLevel(logging.DEBUG)
+
     timer = PunchGame()
     timer.delay_min = delay_min
     timer.delay_max = delay_max
