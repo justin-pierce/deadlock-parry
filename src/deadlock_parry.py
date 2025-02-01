@@ -99,6 +99,7 @@ class PunchGame(object):
 
         # create a display to capture input
         self._window = pygame.display.set_mode()
+        self._window.fill(0)
         self._hwnd = pygame.display.get_wm_info()["window"]
         pygame.display.set_caption("Deadlock Parry Practice")
 
@@ -115,9 +116,12 @@ class PunchGame(object):
         # start minimized
         self.deactivate_window()
 
+        clock = pygame.time.Clock()
+
         run = True
         while run:
-            self._window.fill(0)
+            # rate limit when not punching, keeps the app responsive to exit inputs, etc
+            clock.tick(360 if self._is_punching else 2)
 
             # listen for parry input
             parry_input_pressed = False
@@ -160,8 +164,6 @@ class PunchGame(object):
                         self.finish_punch(False, elapsed_time_ms)
                     elif elapsed_time_ms >= self.parry_window + FINISH_PUNCH_DELAY:
                         self.finish_punch(False, None)
-
-            pygame.display.flip()
 
     def activate_window(self):
         if self._hwnd:
