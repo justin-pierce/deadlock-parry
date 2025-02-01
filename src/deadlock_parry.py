@@ -44,7 +44,7 @@ class ParryResult(object):
         return self.response_time is not None
 
 
-class PunchGame(object):
+class ParryTrainer(object):
     PUNCH_SOUND = "punch"
     PARRY_SOUND = "parry"
     HIT_SOUND = "hit"
@@ -75,6 +75,7 @@ class PunchGame(object):
         # a record of all results
         self.results: list[ParryResult] = []
 
+        # init pygame immediately, so that key codes and other options can be configured
         pygame.init()
         pygame.mixer.init()
 
@@ -91,7 +92,7 @@ class PunchGame(object):
         sound.play()
 
     def start(self):
-        LOG.info(f"Starting parry practice")
+        LOG.info(f"Starting Parry Trainer")
         LOG.info(f"Delay: {self.delay_min}..{self.delay_max}s")
         LOG.info(f"Parry Window: {self.parry_window}ms")
         LOG.info(f"Parry Key: {pygame.key.name(self.parry_key)}")
@@ -101,7 +102,7 @@ class PunchGame(object):
         self._window = pygame.display.set_mode()
         self._window.fill(0)
         self._hwnd = pygame.display.get_wm_info()["window"]
-        pygame.display.set_caption("Deadlock Parry Practice")
+        pygame.display.set_caption("Deadlock Parry Trainer")
 
         # make window transparent
         win32gui.SetWindowLong(
@@ -271,12 +272,12 @@ def main(delay_min, delay_max, parry_window, parry_key, verbose):
     if verbose:
         LOG.setLevel(logging.DEBUG)
 
-    timer = PunchGame()
-    timer.delay_min = delay_min
-    timer.delay_max = delay_max
-    timer.parry_window = parry_window
-    timer.set_parry_key(parry_key)
-    timer.start()
+    trainer = ParryTrainer()
+    trainer.delay_min = delay_min
+    trainer.delay_max = delay_max
+    trainer.parry_window = parry_window
+    trainer.set_parry_key(parry_key)
+    trainer.start()
 
 
 if __name__ == "__main__":
