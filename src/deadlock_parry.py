@@ -8,9 +8,13 @@ import time
 
 import click
 import pygame
-import win32com.client
-import win32con
-import win32gui
+
+import os
+
+if os.name == "nt":
+    import win32com.client
+    import win32con
+    import win32gui
 
 __version__ = "1.0.4"
 
@@ -19,9 +23,11 @@ _file_dir = os.path.dirname(__file__)
 LOG = logging.getLogger()
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s", level=logging.INFO)
 
-DEFAULT_DELAY_MIN = 15
-DEFAULT_DELAY_MAX = 240
+DEFAULT_DELAY_MIN = 3
+DEFAULT_DELAY_MAX = 5
 DEFAULT_PARRY_WINDOW = 600
+
+os.environ["SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"] = "1"
 
 # delay after failing to parry before the app is deactivated
 FINISH_PUNCH_DELAY = 600
@@ -105,14 +111,17 @@ class ParryTrainer(object):
         pygame.display.set_caption("Deadlock Parry Trainer")
 
         # make window transparent
-        win32gui.SetWindowLong(
-            self._hwnd,
-            win32con.GWL_EXSTYLE,
-            win32gui.GetWindowLong(self._hwnd, win32con.GWL_EXSTYLE) | win32con.WS_EX_LAYERED,
-        )
-        # from 0..255
-        transparency = 1
-        win32gui.SetLayeredWindowAttributes(self._hwnd, 0, transparency, win32con.LWA_ALPHA)
+        if os.name == "nt":
+            win32gui.SetWindowLong(
+                self._hwnd,
+                win32con.GWL_EXSTYLE,
+                win32gui.GetWindowLong(self._hwnd, win32con.GWL_EXSTYLE) | win32con.WS_EX_LAYERED,
+            )
+
+            # from 0..255
+            transparency = 1
+            win32gui.SetLayeredWindowAttributes(self._hwnd, 0, transparency, win32con.LWA_ALPHA)
+
 
         # start minimized
         self.deactivate_window()
@@ -168,16 +177,22 @@ class ParryTrainer(object):
 
     def activate_window(self):
         if self._hwnd:
-            # SetForegroundWindow won't work unless you send an alt key first
-            shell = win32com.client.Dispatch("WScript.Shell")
-            shell.SendKeys("%")
-            win32gui.ShowWindow(self._hwnd, win32con.SW_RESTORE)
-            win32gui.SetForegroundWindow(self._hwnd)
+
+            if os.name == "nt":
+                # SetForegroundWindow won't work unless you send an alt key first
+                shell = win32com.client.Dispatch("WScript.Shell")
+                shell.SendKeys("%")
+                win32gui.ShowWindow(self._hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(self._hwnd)
+            else:
+                os.system("wmctrl -a \"Deadlock Parry Trainer\"")
 
     def deactivate_window(self):
         # restore focus to the previously focused window
         if self._hwnd:
-            win32gui.ShowWindow(self._hwnd, win32con.SW_MINIMIZE)
+
+            if os.name == "nt":
+                win32gui.ShowWindow(self._hwnd, win32con.SW_MINIMIZE)
 
     def schedule_punch(self):
         # do a quick initial delay for the first punch
