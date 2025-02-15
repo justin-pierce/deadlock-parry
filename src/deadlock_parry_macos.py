@@ -7,14 +7,9 @@ import statistics
 import time
 
 import click
-import pygame
-
+from pynput import keyboard
 import os
-
-if os.name == "nt":
-    import win32com.client
-    import win32con
-    import win32gui
+import subprocess
 
 __version__ = "1.0.4"
 
@@ -63,7 +58,10 @@ class ParryTrainer(object):
         # the maximum number of milliseconds allowed before the parry fails
         self.parry_window = DEFAULT_PARRY_WINDOW
         # the key binding for parry
-        self.parry_key = pygame.K_f
+        self.parry_key = "f"
+
+        self.listener = None
+        self.parry_input_pressed = False
 
         # the next time a punch should be triggered
         self._next_punch_time = -1
@@ -74,16 +72,16 @@ class ParryTrainer(object):
         # did the player miss the parry window for the current punch?
         self._parry_failed = False
 
-        self._window: pygame.Surface | None = None
-        self._hwnd = None
-        self._last_active_hwnd = None
+        # self._window: pygame.Surface | None = None
+        # self._hwnd = None
+        # self._last_active_hwnd = None
 
         # a record of all results
         self.results: list[ParryResult] = []
 
         # init pygame immediately, so that key codes and other options can be configured
-        pygame.init()
-        pygame.mixer.init()
+        # pygame.init()
+        # pygame.mixer.init()
 
     def set_parry_key(self, name: str):
         try:
@@ -94,60 +92,60 @@ class ParryTrainer(object):
 
     def play_sound(self, name):
         path = os.path.join(_file_dir, "audio", f"{name}.wav")
-        sound = pygame.mixer.Sound(path)
-        sound.play()
+        subprocess.Popen(["afplay", path])
+
 
     def start(self):
         LOG.info(f"Starting Parry Trainer")
         LOG.info(f"Delay: {self.delay_min}..{self.delay_max}s")
         LOG.info(f"Parry Window: {self.parry_window}ms")
-        LOG.info(f"Parry Key: {pygame.key.name(self.parry_key)}")
+        # LOG.info(f"Parry Key: {pygame.key.name(self.parry_key)}")
         LOG.info(f"Press Ctrl + C to quit.")
 
         # create a display to capture input
-        self._window = pygame.display.set_mode()
-        self._window.fill(0)
-        self._hwnd = pygame.display.get_wm_info()["window"]
-        pygame.display.set_caption("Deadlock Parry Trainer")
+        # self._window = pygame.display.set_mode()
+        # self._window.fill(0)
+        # self._hwnd = pygame.display.get_wm_info()["window"]
+        # pygame.display.set_caption("Deadlock Parry Trainer")
 
         # make window transparent
-        if os.name == "nt":
-            win32gui.SetWindowLong(
-                self._hwnd,
-                win32con.GWL_EXSTYLE,
-                win32gui.GetWindowLong(self._hwnd, win32con.GWL_EXSTYLE) | win32con.WS_EX_LAYERED,
-            )
-
-            # from 0..255
-            transparency = 1
-            win32gui.SetLayeredWindowAttributes(self._hwnd, 0, transparency, win32con.LWA_ALPHA)
+        # if os.name == "nt":
+        #     win32gui.SetWindowLong(
+        #         self._hwnd,
+        #         win32con.GWL_EXSTYLE,
+        #         win32gui.GetWindowLong(self._hwnd, win32con.GWL_EXSTYLE) | win32con.WS_EX_LAYERED,
+        #     )
+        #
+        #     # from 0..255
+        #     transparency = 1
+        #     win32gui.SetLayeredWindowAttributes(self._hwnd, 0, transparency, win32con.LWA_ALPHA)
 
 
         # start minimized
         self.deactivate_window()
 
-        clock = pygame.time.Clock()
+        # clock = pygame.time.Clock()
 
         run = True
         while run:
             # rate limit when not punching, keeps the app responsive to exit inputs, etc
-            clock.tick(360 if self._is_punching else 2)
+            # clock.tick(360 if self._is_punching else 2)
 
             # listen for parry input
-            parry_input_pressed = False
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    run = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.deactivate_window()
-                    elif event.key == pygame.K_c:
-                        if event.mod & pygame.KMOD_CTRL:
-                            LOG.info(f"Received Ctrl + C, exiting...")
-                            run = False
-                    elif event.key == self.parry_key:
-                        parry_input_pressed = True
-                    LOG.debug(f"KEYDOWN: {event.dict}")
+            self.parry_input_pressed = False
+            # for event in pygame.event.get():
+            #     if event.type == pygame.QUIT:
+            #         run = False
+            #     elif event.type == pygame.KEYDOWN:
+            #         if event.key == pygame.K_ESCAPE:
+            #             self.deactivate_window()
+            #         elif event.key == pygame.K_c:
+            #             if event.mod & pygame.KMOD_CTRL:
+            #                 LOG.info(f"Received Ctrl + C, exiting...")
+            #                 run = False
+            #         elif event.key == self.parry_key:
+            #             parry_input_pressed = True
+            #         LOG.debug(f"KEYDOWN: {event.dict}")
 
             if not self._is_punching:
                 if self._next_punch_time < 0:
@@ -162,7 +160,7 @@ class ParryTrainer(object):
 
                 if not self._parry_failed:
                     # still time left to parry
-                    if parry_input_pressed:
+                    if self.parry_input_pressed:
                         self.parry()
                         self.finish_punch(True, elapsed_time_ms)
                     elif elapsed_time_ms >= self.parry_window:
@@ -170,29 +168,39 @@ class ParryTrainer(object):
                         self.fail_parry()
                 else:
                     # failed the parry, just wait for late input or finish the punch
-                    if parry_input_pressed:
+                    if self.parry_input_pressed:
                         self.finish_punch(False, elapsed_time_ms)
                     elif elapsed_time_ms >= self.parry_window + FINISH_PUNCH_DELAY:
                         self.finish_punch(False, None)
 
     def activate_window(self):
-        if self._hwnd:
-
-            if os.name == "nt":
-                # SetForegroundWindow won't work unless you send an alt key first
-                shell = win32com.client.Dispatch("WScript.Shell")
-                shell.SendKeys("%")
-                win32gui.ShowWindow(self._hwnd, win32con.SW_RESTORE)
-                win32gui.SetForegroundWindow(self._hwnd)
-            else:
-                os.system("open -a \"Python\"")
+        # os.system("open -a \"Python\"")
+        self.listener = keyboard.Listener(
+            on_press=self.on_key_press,
+            suppress=False)
+        self.listener.start()
+        print("started listening for key")
+        # print(f"{self.listener.IS_TRUSTED}")
 
     def deactivate_window(self):
         # restore focus to the previously focused window
-        if self._hwnd:
+        if self.listener is not None:
+            self.listener.stop()
+            print("stopped listening for key")
 
-            if os.name == "nt":
-                win32gui.ShowWindow(self._hwnd, win32con.SW_MINIMIZE)
+    def on_key_press(self, key):
+        try:
+            print('alphanumeric key {0} pressed'.format(
+                key.char))
+
+            if key.char == "f":
+                print("parried!")
+                self.parry_input_pressed = True
+                # self.parry()f
+                # self.finish_punch(True, 1)
+        except AttributeError:
+            print('special key {0} pressed'.format(
+                key))
 
     def schedule_punch(self):
         # do a quick initial delay for the first punch
@@ -291,7 +299,7 @@ def main(delay_min, delay_max, parry_window, parry_key, verbose):
     trainer.delay_min = delay_min
     trainer.delay_max = delay_max
     trainer.parry_window = parry_window
-    trainer.set_parry_key(parry_key)
+    # trainer.set_parry_key(parry_key)
     trainer.start()
 
 
